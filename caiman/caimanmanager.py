@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import argparse
-import distutils.dir_util
 import filecmp
 import glob
+import json
 import os
 import platform
 import psutil
@@ -53,20 +53,35 @@ standard_movies = [
 
 def do_install_to(targdir: str, inplace: bool = False, force: bool = False) -> None:
     global sourcedir_base
+    cwd = None # Assigning so it exists to avoid UnboundLocalError
+
+    try:
+        import importlib
+        import importlib_metadata
+        # A lot can change upstream with this code; I hope the APIs are stable, but just in case, make this best-effort
+        if json.loads(importlib_metadata.Distribution.from_name('caiman').read_text('direct_url.json'))['dir_info']['editable']:
+            inplace = True
+            cwd = os.getcwd()
+            os.chdir(str(importlib.resources.files('caiman').joinpath('..')))
+            print(f"Used editable fallback, entered {os.getcwd()} directory")
+    except:
+        print("Did not use editable fallback")
+
+    ignore_pycache=shutil.ignore_patterns('__pycache__')
     if os.path.isdir(targdir) and not force:
         raise Exception(targdir + " already exists. You may move it out of the way, remove it, or use --force")
     if not inplace:    # In this case we rely on what setup.py put in the share directory for the module
         if not force:
-            shutil.copytree(sourcedir_base, targdir)
+            shutil.copytree(sourcedir_base, targdir, ignore=ignore_pycache)
         else:
-            distutils.dir_util.copy_tree(sourcedir_base, targdir)
+            shutil.copytree(sourcedir_base, targdir, ignore=ignore_pycache, dirs_exist_ok=True)
         os.makedirs(os.path.join(targdir, 'temp'          ), exist_ok=True)
     else:          # here we recreate the other logical path here. Maintenance concern: Keep these reasonably in sync with what's in setup.py
         for copydir in extra_dirs:
             if not force:
-                shutil.copytree(copydir, os.path.join(targdir, copydir))
+                shutil.copytree(copydir, os.path.join(targdir, copydir), ignore=ignore_pycache)
             else:
-                distutils.dir_util.copy_tree(copydir, os.path.join(targdir, copydir))
+                shutil.copytree(copydir, os.path.join(targdir, copydir), ignore=ignore_pycache, dirs_exist_ok=True)
         os.makedirs(os.path.join(targdir, 'example_movies'), exist_ok=True)
         os.makedirs(os.path.join(targdir, 'temp'          ), exist_ok=True)
         for stdmovie in standard_movies:
@@ -77,6 +92,8 @@ def do_install_to(targdir: str, inplace: bool = False, force: bool = False) -> N
         with open(os.path.join(targdir, 'RELEASE'), 'w') as verfile_fh:
             print(f"Version:{caiman.__version__}", file=verfile_fh)
     print("Installed " + targdir)
+    if cwd is not None:
+        os.chdir(cwd)
 
 
 def do_check_install(targdir: str, inplace: bool = False) -> None:

@@ -71,7 +71,7 @@ class CNMF(object):
                  ssub=2, tsub=2, p_ssub=1, p_tsub=1, method_init='greedy_roi', alpha_snmf=0.5,
                  rf=None, stride=None, memory_fact=1, gnb=1, nb_patch=1, only_init_patch=False,
                  method_deconvolution='oasis', n_pixels_per_process=4000, block_size_temp=5000, num_blocks_per_run_temp=20,
-                 block_size_spat=5000, num_blocks_per_run_spat=20,
+                 num_blocks_per_run_spat=20,
                  check_nan=True, skip_refinement=False, normalize_init=True, options_local_NMF=None,
                  minibatch_shape=100, minibatch_suff_stat=3,
                  update_num_comps=True, rval_thr=0.9, thresh_fitness_delta=-20,
@@ -86,7 +86,7 @@ class CNMF(object):
                  max_num_added=3, min_num_trial=2, thresh_CNN_noisy=0.5,
                  fr=30, decay_time=0.4, min_SNR=2.5, ssub_B=2, init_iter=2,
                  sniper_mode=False, use_peak_max=False, test_both=False,
-                 expected_comps=500, max_merge_area=None, params=None):
+                 expected_comps=500, params=None):
         """
         Constructor of the CNMF method
 
@@ -247,8 +247,6 @@ class CNMF(object):
             init_iter: int, optional
                 number of iterations for 1-photon imaging initialization
 
-            max_merge_area: int, optional
-                maximum area (in pixels) of merged components, used to determine whether to merge components during fitting process
         """
 
         self.dview = dview
@@ -272,7 +270,7 @@ class CNMF(object):
                 gnb=gnb, normalize_init=normalize_init, options_local_NMF=options_local_NMF,
                 ring_size_factor=ring_size_factor, rolling_length=rolling_length, rolling_sum=rolling_sum,
                 ssub=ssub, ssub_B=ssub_B, tsub=tsub,
-                block_size_spat=block_size_spat, num_blocks_per_run_spat=num_blocks_per_run_spat,
+                num_blocks_per_run_spat=num_blocks_per_run_spat,
                 block_size_temp=block_size_temp, num_blocks_per_run_temp=num_blocks_per_run_temp,
                 update_background_components=update_background_components,
                 method_deconvolution=method_deconvolution, p=p, s_min=s_min,
@@ -284,9 +282,7 @@ class CNMF(object):
                 n_refit=n_refit, num_times_comp_updated=num_times_comp_updated, simultaneously=simultaneously,
                 sniper_mode=sniper_mode, test_both=test_both, thresh_CNN_noisy=thresh_CNN_noisy,
                 thresh_fitness_delta=thresh_fitness_delta, thresh_fitness_raw=thresh_fitness_raw, thresh_overlap=thresh_overlap,
-                update_num_comps=update_num_comps, use_dense=use_dense, use_peak_max=use_peak_max, alpha_snmf=alpha_snmf,
-                max_merge_area=max_merge_area
-            )
+                update_num_comps=update_num_comps, use_dense=use_dense, use_peak_max=use_peak_max, alpha_snmf=alpha_snmf)
         else:
             self.params = params
             params.set('patch', {'n_processes': n_processes})
@@ -314,6 +310,7 @@ class CNMF(object):
         Returns:
             cnmf object with the current estimates
         """
+        logger = logging.getLogger("caiman")
         if indices is None:
             indices = (slice(None), slice(None))
         fnames = self.params.get('data', 'fnames')
@@ -321,7 +318,7 @@ class CNMF(object):
             _, extension = os.path.splitext(fnames[0])[:2]
             extension = extension.lower()
         else:
-            logging.warning("Error: File not found, with file list:\n" + fnames[0])
+            logger.error(f"Error: File not found, with file list:\n{fnames[0]}")
             raise Exception('File not found!')
 
         base_name = pathlib.Path(fnames[0]).stem + "_memmap_"
@@ -423,6 +420,7 @@ class CNMF(object):
         http://www.cell.com/neuron/fulltext/S0896-6273(15)01084-3
 
         """
+        logger = logging.getLogger("caiman")
         # Todo : to compartment
         if isinstance(indices, slice):
             indices = [indices]
@@ -437,9 +435,7 @@ class CNMF(object):
         if self.params.get('patch', 'rf') is None and (is_sliced or 'ndarray' in str(type(images))):
             images = images[tuple(indices)]
             self.dview = None
-            logging.info("Parallel processing in a single patch "
-                            "is not available for loaded in memory or sliced" +
-                            " data.")
+            logger.info("Parallel processing in a single patch is not available for loaded in memory or sliced data.")
 
         T = images.shape[0]
         self.params.set('online', {'init_batch': T})
@@ -450,7 +446,7 @@ class CNMF(object):
         if np.isfortran(Yr):
             raise Exception('The file is in F order, it should be in C order (see save_memmap function)')
 
-        logging.info((T,) + self.dims)
+        logger.info((T,) + self.dims)
 
         # Make sure filename is pointed correctly (numpy sets it to None sometimes)
         try:
@@ -467,7 +463,8 @@ class CNMF(object):
         #                             'ss': np.ones((3,) * len(self.dims), dtype=np.uint8)
         #                             })
 
-        logging.info(('Using ' + str(self.params.get('patch', 'n_processes')) + ' processes'))
+        logger.info(f"Using {self.params.get('patch', 'n_processes')} processes")
+        # FIXME The code below is really ugly and it's hard to tell if it's doing the right thing
         if self.params.get('preprocess', 'n_pixels_per_process') is None:
             avail_memory_per_process = psutil.virtual_memory()[
                 1] / 2.**30 / self.params.get('patch', 'n_processes')
@@ -478,15 +475,14 @@ class CNMF(object):
 
         self.params.set('spatial', {'n_pixels_per_process': self.params.get('preprocess', 'n_pixels_per_process')})
 
-        logging.info('using ' + str(self.params.get('preprocess', 'n_pixels_per_process')) + ' pixels per process')
-        logging.info('using ' + str(self.params.get('spatial', 'block_size_spat')) + ' block_size_spat')
-        logging.info('using ' + str(self.params.get('temporal', 'block_size_temp')) + ' block_size_temp')
+        logger.info('using ' + str(self.params.get('preprocess', 'n_pixels_per_process')) + ' pixels per process')
+        logger.info('using ' + str(self.params.get('temporal', 'block_size_temp')) + ' block_size_temp')
 
         if self.params.get('patch', 'rf') is None:  # no patches
-            logging.info('preprocessing ...')
+            logger.info('preprocessing ...')
             Yr = self.preprocess(Yr)
             if self.estimates.A is None:
-                logging.info('initializing ...')
+                logger.info('initializing ...')
                 self.initialize(Y)
 
             if self.params.get('patch', 'only_init'):  # only return values after initialization
@@ -499,21 +495,21 @@ class CNMF(object):
 
 
                 if self.remove_very_bad_comps:
-                    logging.info('removing bad components : ')
+                    logger.info('removing bad components : ')
                     final_frate = 10
                     r_values_min = 0.5  # threshold on space consistency
                     fitness_min = -15  # threshold on time variability
                     fitness_delta_min = -15
                     Npeaks = 10
                     traces = np.array(self.C)
-                    logging.info('estimating the quality...')
+                    logger.info('estimating the quality...')
                     idx_components, idx_components_bad, fitness_raw,\
                         fitness_delta, r_values = estimate_components_quality(
                             traces, Y, self.estimates.A, self.estimates.C, self.estimates.b, self.estimates.f,
                             final_frate=final_frate, Npeaks=Npeaks, r_values_min=r_values_min,
                             fitness_min=fitness_min, fitness_delta_min=fitness_delta_min, return_all=True, N=5)
 
-                    logging.info(('Keeping ' + str(len(idx_components)) +
+                    logger.info(('Keeping ' + str(len(idx_components)) +
                            ' and discarding  ' + str(len(idx_components_bad))))
                     self.estimates.C = self.estimates.C[idx_components]
                     self.estimates.A = self.estimates.A[:, idx_components] # type: ignore # not provable that self.initialise provides a value
@@ -523,31 +519,31 @@ class CNMF(object):
 
                 return self
 
-            logging.info('update spatial ...')
+            logger.info('update spatial ...')
             self.update_spatial(Yr, use_init=True)
 
-            logging.info('update temporal ...')
+            logger.info('update temporal ...')
             if not self.skip_refinement:
                 # set this to zero for fast updating without deconvolution
                 self.params.set('temporal', {'p': 0})
             else:
                 self.params.set('temporal', {'p': self.params.get('preprocess', 'p')})
-                logging.info('deconvolution ...')
+                logger.info('deconvolution ...')
 
             self.update_temporal(Yr)
 
             if not self.skip_refinement:
-                logging.info('refinement...')
+                logger.info('refinement...')
                 if self.params.get('merging', 'do_merge'):
-                    logging.info('merging components ...')
-                    self.merge_comps(Yr, mx=50, fast_merge=True, max_merge_area=self.params.get('merging', 'max_merge_area'))
+                    logger.info('merging components ...')
+                    self.merge_comps(Yr, mx=50, fast_merge=True)
 
-                logging.info('Updating spatial ...')
+                logger.info('Updating spatial ...')
 
                 self.update_spatial(Yr, use_init=False)
                 # set it back to original value to perform full deconvolution
                 self.params.set('temporal', {'p': self.params.get('preprocess', 'p')})
-                logging.info('update temporal ...')
+                logger.info('update temporal ...')
                 self.update_temporal(Yr, use_init=False)
             # else:
             #     todo : ask for those..
@@ -573,7 +569,7 @@ class CNMF(object):
         else:  # use patches
             if self.params.get('patch', 'stride') is None:
                 self.params.set('patch', {'stride': int(self.params.get('patch', 'rf') * 2 * .1)})
-                logging.info(
+                logger.info(
                     ('Setting the stride to 10% of 2*rf automatically:' + str(self.params.get('patch', 'stride'))))
 
             if not isinstance(images, np.memmap):
@@ -590,7 +586,7 @@ class CNMF(object):
                     indices=indices)
 
             self.estimates.bl, self.estimates.c1, self.estimates.g, self.estimates.neurons_sn = None, None, None, None
-            logging.info("merging")
+            logger.info("merging")
             self.estimates.merged_ROIs = [0]
 
 
@@ -600,14 +596,14 @@ class CNMF(object):
                     while len(self.estimates.merged_ROIs) > 0:
                         self.merge_comps(Yr, mx=np.Inf, fast_merge=True)
 
-                    logging.info("update temporal")
+                    logger.info("update temporal")
                     self.update_temporal(Yr, use_init=False)
 
                     self.params.set('spatial', {'se': np.ones((1,) * len(self.dims), dtype=np.uint8)})
-                    logging.info('update spatial ...')
+                    logger.info('update spatial ...')
                     self.update_spatial(Yr, use_init=False)
 
-                    logging.info("update temporal")
+                    logger.info("update temporal")
                     self.update_temporal(Yr, use_init=False)
                 else:
                     while len(self.estimates.merged_ROIs) > 0:
@@ -632,7 +628,7 @@ class CNMF(object):
                 while len(self.estimates.merged_ROIs) > 0:
                     self.merge_comps(Yr, mx=np.Inf)
 
-                logging.info("update temporal")
+                logger.info("update temporal")
                 self.update_temporal(Yr, use_init=False)
 
         self.estimates.normalize_components()
@@ -922,7 +918,7 @@ class CNMF(object):
 
         return self
 
-    def merge_comps(self, Y, mx=50, fast_merge=True, max_merge_area=None):
+    def merge_comps(self, Y, mx=50, fast_merge=True):
         """merges components
         """
         self.estimates.A, self.estimates.C, self.estimates.nr, self.estimates.merged_ROIs, self.estimates.S, \
@@ -933,8 +929,7 @@ class CNMF(object):
                              self.params.get_group('spatial'), dview=self.dview,
                              bl=self.estimates.bl, c1=self.estimates.c1, sn=self.estimates.neurons_sn,
                              g=self.estimates.g, thr=self.params.get('merging', 'merge_thr'), mx=mx,
-                             fast_merge=fast_merge, merge_parallel=self.params.get('merging', 'merge_parallel'),
-                             max_merge_area=max_merge_area)
+                             fast_merge=fast_merge, merge_parallel=self.params.get('merging', 'merge_parallel'))
 
         return self
 

@@ -10,8 +10,8 @@ import scipy
 from scipy.ndimage import generate_binary_structure, iterate_structure
 from typing import Optional
 
-import caiman.utils.utils
 import caiman.base.movies
+import caiman.utils.utils
 from caiman.paths import caiman_datadir
 from caiman.source_extraction.cnmf.utilities import dict_compare
 
@@ -29,7 +29,7 @@ class CNMFParams(object):
                  min_pnr=20, gnb=1, normalize_init=True, options_local_NMF=None,
                  ring_size_factor=1.5, rolling_length=100, rolling_sum=True,
                  ssub=2, ssub_B=2, tsub=2,
-                 block_size_spat=5000, num_blocks_per_run_spat=20,
+                 num_blocks_per_run_spat=20,
                  block_size_temp=5000, num_blocks_per_run_temp=20,
                  update_background_components=True,
                  method_deconvolution='oasis', p=2, s_min=None,
@@ -97,12 +97,6 @@ class CNMFParams(object):
             last_commit: str
                 hash of last commit in the caiman repo. Pleaes do not override this.
 
-            mmap_F: list[str]
-                paths to F-order memory mapped files after motion correction
-
-            mmap_C: str
-                path to C-order memory mapped file after motion correction
-
           CNMFParams.patch (these control how the data is divided into patches):
             border_pix: int, default: 0
                 Number of pixels to exclude around each border.
@@ -142,7 +136,7 @@ class CNMFParams(object):
                 If list, it should be a list of two elements corresponding to the height and width of patches
 
             skip_refinement: bool, default: False
-                Whether to skip refinement of components (deprecated?)
+                Whether to skip refinement of components
 
             p_ssub: float, default: 2
                 Spatial downsampling factor
@@ -157,7 +151,7 @@ class CNMFParams(object):
             check_nan: bool, default: True
                 whether to check for NaNs
 
-            compute_g': bool, default: False
+            compute_g: bool, default: False
                 whether to estimate global time constant
 
             include_noise: bool, default: False
@@ -191,7 +185,7 @@ class CNMFParams(object):
             K: int, default: 30
                 number of components to be found (per patch or whole FOV depending on whether rf=None)
 
-            SC_kernel: {'heat', 'cos', binary'}, default: 'heat'
+            SC_kernel: {'heat', 'cos', 'binary'}, default: 'heat'
                 kernel for graph affinity matrix
 
             SC_sigma: float, default: 1
@@ -288,9 +282,6 @@ class CNMFParams(object):
                 temporal downsampling factor
 
           CNMFParams.spatial (these control how the algorithms handle spatial components):
-            block_size_spat : int, default: 5000
-                Number of pixels to process at the same time for dot product. Reduce if you face memory problems
-
             dist: float, default: 3
                 expansion factor of ellipse
 
@@ -318,7 +309,7 @@ class CNMFParams(object):
                 number of pixels to be processed by each worker
 
             nb: int, default: 1
-                number of global background components
+                number of global background components. Do not set this directly; modify it in init.
 
             normalize_yyt_one: bool, default: True
                 Whether to normalize the C and A matrices so that diag(C*C.T) = 1 during update spatial
@@ -361,15 +352,12 @@ class CNMFParams(object):
             optimize_g: bool, default: False
                 flag for optimizing time constants
 
-            memory_efficient:
-                (undocumented)
-
             method_deconvolution: 'oasis'|'cvxpy'|'oasis', default: 'oasis'
                 method for solving the constrained deconvolution problem ('oasis','cvx' or 'cvxpy')
                 if method cvxpy, primary and secondary (if problem unfeasible for approx solution)
 
             nb: int, default: 1
-                number of global background components
+                number of global background components. Do not set this directly; modify it in init.
 
             noise_method: 'mean'|'median'|'logmexp', default: 'mean'
                 PSD averaging method for computing the noise std
@@ -401,9 +389,6 @@ class CNMFParams(object):
 
             merge_parallel: bool, default: False
                 Perform merging in parallel
-
-            max_merge_area: int or None, default: None
-                maximum area (in pixels) of merged components, used to determine whether to merge components during fitting process
 
           CNMFParams.quality (these control how quality of traces are evaluated):
             SNR_lowest: float, default: 0.5
@@ -677,9 +662,7 @@ class CNMFParams(object):
             'dxy': dxy,
             'var_name_hdf5': var_name_hdf5,
             'caiman_version': pkg_resources.get_distribution('caiman').version,
-            'last_commit': None,
-            'mmap_F': None,
-            'mmap_C': None
+            'last_commit': None
         }
 
         self.patch = {
@@ -716,7 +699,7 @@ class CNMFParams(object):
         }
 
         self.init = {
-            'K': k,                   # number of components,
+            'K': k,                      # number of components,
             'SC_kernel': 'heat',         # kernel for graph affinity matrix
             'SC_sigma' : 1,              # std for SC kernel
             'SC_thr': 0,                 # threshold for affinity matrix
@@ -756,7 +739,6 @@ class CNMFParams(object):
         }
 
         self.spatial = {
-            'block_size_spat': block_size_spat, # number of pixels to parallelize residual computation ** DECREASE IF MEMORY ISSUES
             'dist': 3,                       # expansion factor of ellipse
             'expandCore': iterate_structure(generate_binary_structure(2, 1), 2).astype(int),
             # Flag to extract connected components (might want to turn to False for dendritic imaging)
@@ -793,7 +775,6 @@ class CNMFParams(object):
             # number of autocovariance lags to be considered for time constant estimation
             'lags': 5,
             'optimize_g': False,         # flag for optimizing time constants
-            'memory_efficient': False,
             # method for solving the constrained deconvolution problem ('oasis','cvx' or 'cvxpy')
             # if method cvxpy, primary and secondary (if problem unfeasible for approx
             # solution) solvers to be used with cvxpy, can be 'ECOS','SCS' or 'CVXOPT'
@@ -811,8 +792,7 @@ class CNMFParams(object):
         self.merging = {
             'do_merge': do_merge,
             'merge_thr': merge_thresh,
-            'merge_parallel': False,
-            'max_merge_area': max_merge_area
+            'merge_parallel': False
         }
 
         self.quality = {
@@ -824,7 +804,7 @@ class CNMFParams(object):
             'rval_lowest': -1,         # minimum accepted space correlation
             'rval_thr': rval_thr,      # space correlation threshold
             'use_cnn': True,           # use CNN based classifier
-            'use_ecc': False,          # flag for eccentricity based filtering
+            'use_ecc': False,          # flag for eccentricity based filtering (2D only)
             'max_ecc': 3
         }
 
@@ -923,6 +903,7 @@ class CNMFParams(object):
         """ Populates the params object with some dataset dependent values
         and ensures that certain constraints are satisfied.
         """
+        logger = logging.getLogger("caiman")
         self.data['last_commit'] = '-'.join(caiman.utils.utils.get_caiman_version())
         if self.data['dims'] is None and self.data['fnames'] is not None:
             self.data['dims'] = caiman.base.movies.get_file_size(self.data['fnames'], var_name_hdf5=self.data['var_name_hdf5'])[0]
@@ -956,20 +937,18 @@ class CNMFParams(object):
         self.init['gSiz'] = tuple([gs + 1 if gs % 2 == 0 else gs for gs in self.init['gSiz']])
         if self.patch['rf'] is not None:
             if np.any(np.array(self.patch['rf']) <= self.init['gSiz'][0]):
-                logging.warning(f"Changing rf from {self.patch['rf']} to {2 * self.init['gSiz'][0]} because the constraint rf > gSiz was not satisfied.")
-#        if self.motion['gSig_filt'] is None:
-#            self.motion['gSig_filt'] = self.init['gSig']
+                logger.warning(f"Changing rf from {self.patch['rf']} to {2 * self.init['gSiz'][0]} because the constraint rf > gSiz was not satisfied.")
         if self.init['nb'] <= 0 and (self.patch['nb_patch'] != self.init['nb'] or
                                      self.patch['low_rank_background'] is not None):
-            logging.warning(f"gnb={self.init['nb']}, hence setting keys nb_patch and low_rank_background in group patch automatically.")
+            logger.warning(f"gnb={self.init['nb']}, hence setting keys nb_patch and low_rank_background in group patch automatically.")
             self.set('patch', {'nb_patch': self.init['nb'], 'low_rank_background': None})
         if self.init['nb'] == -1 and self.spatial['update_background_components']:
-            logging.warning("gnb=-1, hence setting key update_background_components " +
+            logger.warning("gnb=-1, hence setting key update_background_components " +
                             "in group spatial automatically to False.")
             self.set('spatial', {'update_background_components': False})
         if self.init['method_init'] == 'corr_pnr' and self.init['ring_size_factor'] is not None \
             and self.init['normalize_init']:
-            logging.warning("using CNMF-E's ringmodel for background hence setting key " +
+            logger.warning("using CNMF-E's ringmodel for background hence setting key " +
                             "normalize_init in group init automatically to False.")
             self.set('init', {'normalize_init': False})
         if self.motion['is3D']:
@@ -977,15 +956,13 @@ class CNMFParams(object):
                 if len(self.motion[a]) != 3:
                     if self.motion[a][0] == self.motion[a][1]:
                         self.motion[a] = (self.motion[a][0],) * 3
-                        logging.warning("is3D=True, hence setting key " + a +
-                            " automatically to " + str(self.motion[a]))
+                        logger.warning(f"is3D=True, hence setting key {a} to {self.motion[a]}")
                     else:
-                        raise ValueError(a + ' has to be a tuple of length 3 for volumetric 3D data')
+                        raise ValueError(f'{a} must be a tuple of length 3 for volumetric 3D data')
         for key in ('max_num_added', 'min_num_trial'):
             if (self.online[key] == 0 and self.online['update_num_comps']):
                 self.set('online', {'update_num_comps': False})
-                logging.warning(key + "=0, hence setting key update_num_comps " +
-                                "in group online automatically to False.")
+                logger.warning(f"{key}=0, hence setting key online.update_num_comps to False.")
         # FIXME The authoritative value is stored in the init field. This should later be refactored out
         #     into a general section, once we're passing around the CNMFParams object rather than splatting it out
         #     from **get_group
@@ -1007,8 +984,9 @@ class CNMFParams(object):
         A future version of caiman may make this method private.
         """
 
+        logger = logging.getLogger("caiman")
         if set_if_not_exists:
-            logging.warning("The set_if_not_exists flag for CNMFParams.set() is deprecated and will be removed in a future version of Caiman")
+            logger.warning("The set_if_not_exists flag for CNMFParams.set() is deprecated and will be removed in a future version of Caiman")
             # can't easily catch if it's passed but set to False, but that wouldn't do anything because of the default,
             # and if they get that error it's at least really easy to fix - just remove the flag
             # we don't want to support this because it makes the structure of the object unpredictable except at runtime
@@ -1020,14 +998,14 @@ class CNMFParams(object):
         for k, v in val_dict.items():
             if k not in d and not set_if_not_exists:
                 if verbose:
-                    logging.warning(
+                    logger.warning(
                         f"{group}/{k} not set: invalid target in CNMFParams object")
             else:
                 try:
                     if np.any(d[k] != v):
-                        logging.info(f"Changing key {k} in group {group} from {d[k]} to {v}")
+                        logger.info(f"Changing key {k} in group {group} from {d[k]} to {v}")
                 except ValueError: # d[k] and v also differ if above comparison fails, e.g. lists of different length
-                    logging.info(f"Changing key {k} in group {group} from {d[k]} to {v}")
+                    logger.info(f"Changing key {k} in group {group} from {d[k]} to {v}")
                 d[k] = v
 
     def get(self, group, key):
@@ -1140,22 +1118,23 @@ class CNMFParams(object):
                          were never used in populating the Params object. You really should not
                          set this to False. Fix your code.
         """
+        logger = logging.getLogger("caiman")
         # When we're ready to remove allow_legacy, this code will get a lot simpler
 
         consumed = {} # Keep track of what parameters in params_dict were used to set something in params (just for legacy API)
         nagged_once = False # So we don't nag people multiple times in the same call
         for paramkey in params_dict:
-            if paramkey in list(self.__dict__.keys()): # Proper pathed part
+            if paramkey in list(self.__dict__.keys()) and isinstance(params_dict[paramkey], dict): # Handle proper pathed part. Latter half of the conditional is because of scoped keys with the same name as categories, because we apparently have those. ring_CNN is an example.
                 cat_handle = getattr(self, paramkey)
                 for k, v in params_dict[paramkey].items():
                     if k == 'nb' and paramkey != 'init':
                         # Special casing to handle a misdesign in CNMFParams where some keys must have the same value in different
                         # sections.
-                        logging.warning("The 'nb' parameter can only be set in the init part of CNMFParams. Attempts to set it elsewhere are ignored")
+                        logger.warning("The 'nb' parameter can only be set in the init part of CNMFParams. Attempts to set it elsewhere are ignored")
                         continue
                     if k not in cat_handle and warn_unused:
                         # For regular/pathed API, we can notice right away if the user gave us something that won't update the object
-                        logging.warning(f"In setting CNMFParams, provided key {paramkey}/{k} was not consumed. This is a bug!")
+                        logger.warning(f"In setting CNMFParams, provided key {paramkey}/{k} was not consumed. This is a bug!")
                     else:
                         cat_handle[k] = v 
             # BEGIN code that we will remove in some future version of caiman
@@ -1169,13 +1148,13 @@ class CNMFParams(object):
                         cat_handle[paramkey] = params_dict[paramkey] # Do the update
                 if legacy_used:
                     if not nagged_once:
-                        logging.warning(f"In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)")
+                        logger.warning(f"In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)")
                     nagged_once = True
         # END
         if warn_unused:
             for toplevel_k in params_dict:
                 if toplevel_k not in consumed and toplevel_k not in list(self.__dict__.keys()): # When we remove legacy behaviour, this logic will simplify and fold into above
-                    logging.warning(f"In setting CNMFParams, provided toplevel key {toplevel_k} was unused. This is a bug!")
+                    logger.warning(f"In setting CNMFParams, provided toplevel key {toplevel_k} was unused. This is a bug!")
         self.check_consistency()
 
     def change_params_from_json(self, jsonstring:str, verbose:bool=False) -> None:
